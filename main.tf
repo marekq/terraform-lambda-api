@@ -24,9 +24,13 @@ module "lambda_function" {
   attach_cloudwatch_logs_policy = true
 
   allowed_triggers = {
-    AllowAPIGateway = {
+    RestApiGateway = {
       service = "apigateway"
       source_arn = aws_api_gateway_rest_api.api.execution_arn
+    },
+    HttpApiGateway = {
+      service = "apigateway"
+      source_arn = module.api_gateway.apigatewayv2_api_arn
     }
   }
 
@@ -35,21 +39,33 @@ module "lambda_function" {
   policy        = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-// Lambda IAM permission
-resource "aws_lambda_permission" "aws_lambda_permission" {
-  statement_id  = "AllowAPIGatewayInvoke"
+// REST API - Lambda IAM permission
+resource "aws_lambda_permission" "rest_api_permission" {
+  statement_id  = "rest_api_permission"
   action        = "lambda:InvokeFunction"
   function_name = module.lambda_function.lambda_function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*/*"
 }
 
-// Create API Gateway
-resource "aws_api_gateway_rest_api" "api" {
-  name = "terraform-lambda-api"
+resource "aws_lambda_permission" "http_api_permission" {
+  statement_id  = "http_api_permission"
+  action        = "lambda:InvokeFunction"
+  function_name = module.lambda_function.lambda_function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${module.api_gateway.apigatewayv2_api_execution_arn}/*/*/*"
 }
 
-// Create /invoke path on API Gateway
+
+///////////////////////////////////
+
+// Create REST API Gateway
+resource "aws_api_gateway_rest_api" "api" {
+  name = "terraform-lambda-api-rest"
+  description = "terraform-lambda-api-rest"
+}
+
+// Create proxy path on REST API Gateway
 resource "aws_api_gateway_resource" "resource" {
   path_part   = "{proxy+}"
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
@@ -60,11 +76,11 @@ resource "aws_api_gateway_resource" "resource" {
 resource "aws_api_gateway_method" "method" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.resource.id
-  http_method   = "ANY"
+  http_method   = "GET"
   authorization = "NONE"
 }
 
-// Create API Gateway integration
+// Create API Gateway Lambda Proxy integration
 resource "aws_api_gateway_integration" "api" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.resource.id
@@ -75,6 +91,7 @@ resource "aws_api_gateway_integration" "api" {
   uri                     = module.lambda_function.lambda_function_invoke_arn
 }
 
+// Create API Gateway deployment
 resource "aws_api_gateway_deployment" "api" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   stage_name = "prod"
@@ -82,14 +99,44 @@ resource "aws_api_gateway_deployment" "api" {
   triggers = {
     redeployment = sha1(jsonencode(aws_api_gateway_rest_api.api.body))
   }
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
+// Create API Gateway stage "prod"
 resource "aws_api_gateway_stage" "prod" {
-  deployment_id = aws_api_gateway_deployment.api.id
-  rest_api_id   = aws_api_gateway_rest_api.api.id
-  stage_name    = "prod"
+  deployment_id         = aws_api_gateway_deployment.api.id
+  rest_api_id           = aws_api_gateway_rest_api.api.id
+  stage_name            = "prod"
+  xray_tracing_enabled  = true
+}
+
+///////////////////////////////////
+
+// Create HTTP API Gateway
+module "api_gateway" {
+  source = "terraform-aws-modules/apigateway-v2/aws"
+
+  name = "terraform-lambda-api-http"
+  description = "terraform-lambda-api-http"
+  protocol_type = "HTTP"
+  create_api_domain_name = false
+
+  default_route_settings = {
+    detailed_metrics_enabled = true
+    throttling_burst_limit   = 10
+    throttling_rate_limit    = 10
+  }
+
+  integrations = {
+    "GET /{proxy+}" = {
+      lambda_arn             = module.lambda_function.lambda_function_arn
+      payload_format_version = "2.0"
+      timeout_milliseconds   = 5000
+    }
+
+    "$default" = {
+      lambda_arn = module.lambda_function.lambda_function_arn
+      payload_format_version = "2.0"
+      timeout_milliseconds   = 5000
+    }
+  }
 }
