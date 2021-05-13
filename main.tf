@@ -102,6 +102,10 @@ resource "aws_api_gateway_deployment" "api" {
   triggers = {
     redeployment = sha1(jsonencode(aws_api_gateway_rest_api.api.body))
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 // Create API Gateway stage "prod"
@@ -125,21 +129,17 @@ module "api_gateway" {
 
   default_route_settings = {
     detailed_metrics_enabled = true
-    //throttling_burst_limit   = 100
-    //throttling_rate_limit    = 100
+    throttling_burst_limit   = 100
+    throttling_rate_limit    = 100
   }
 
   integrations = {
     "GET /{proxy+}" = {
-      lambda_arn             = module.lambda_function.lambda_function_arn
-      payload_format_version = "2.0"
-      timeout_milliseconds   = 5000
+      lambda_arn = module.lambda_function.lambda_function_arn
     }
 
     "$default" = {
       lambda_arn = module.lambda_function.lambda_function_arn
-      payload_format_version = "2.0"
-      timeout_milliseconds   = 5000
     }
   }
 }
