@@ -63,6 +63,9 @@ resource "aws_lambda_permission" "http_api_permission" {
 resource "aws_api_gateway_rest_api" "api" {
   name = "terraform-lambda-api-rest"
   description = "terraform-lambda-api-rest"
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
 }
 
 // Create proxy path on REST API Gateway
@@ -122,8 +125,8 @@ module "api_gateway" {
 
   default_route_settings = {
     detailed_metrics_enabled = true
-    throttling_burst_limit   = 10
-    throttling_rate_limit    = 10
+    //throttling_burst_limit   = 100
+    //throttling_rate_limit    = 100
   }
 
   integrations = {

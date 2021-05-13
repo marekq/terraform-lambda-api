@@ -3,7 +3,9 @@ terraform-lambda-api
 
 This demo stack deploys the REST and HTTP API Gateway using TerraForm. A Lambda function receives the requests from the gateways and returns the request headers.
 
-![alt text](./images/diagram.png)
+<p align = "center">
+  <img src="https://github.com/marekq/terraform-lambda-api/raw/main/images/diagram.png" />
+</p>
 
 In a production scenario, you may choose to deploy individual Lambda functions per API Gateway instead of reusing one function. 
 
